@@ -1,33 +1,27 @@
 import { Server, ServerEvent } from "socket-be";
-import http from "http";
+import express from "express";
 
-// Puerto asignado por Render, o 3000 en local
-const port = process.env.PORT || 3000;
+const wsServer = new Server({ port: 8000 });
 
 let playersData = {};
 
-// Servidor HTTP
-const httpServer = http.createServer((req, res) => {
-  if (req.url === "/server") {
-    const playersArray = Object.values(playersData);
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(playersArray));
-    return;
-  }
+// Servidor HTTP para fetch
+const app = express();
+const HTTP_PORT = 3000;
 
-  res.writeHead(404, { "Content-Type": "text/plain" });
-  res.end("Not Found");
+app.get("/players", (req, res) => {
+  res.json(playersData);
 });
 
-// Socket-BE usando el mismo servidor HTTP
-const server = new Server({ server: httpServer });
+app.listen(HTTP_PORT, () => {
+  console.log(`HTTP server running on port ${HTTP_PORT}`);
+});
 
-// Eventos del WebSocket
-server.on(ServerEvent.Open, () => {
+wsServer.on(ServerEvent.Open, () => {
   console.log("WebSocket server started");
 });
 
-server.on(ServerEvent.PlayerTransform, async (ev) => {
+wsServer.on(ServerEvent.PlayerTransform, async (ev) => {
   const world = ev.world;
   const players = await world.getPlayers();
 
@@ -35,19 +29,16 @@ server.on(ServerEvent.PlayerTransform, async (ev) => {
     const location = await player.getLocation();
     const ping = await player.getPing();
     const name = player.name;
-    const isMuted = player.hasTag("vc:muted");
+
+    let isMuted = await world.runCommand(`tag ${name} list`);
+    isMuted = isMuted.statusMessage.includes("vc:muted");
 
     playersData[name] = {
       name,
       location,
       ping,
-      isMuted,
       lastUpdate: Date.now(),
+      isMuted,
     };
   }
-});
-
-// Iniciar servidor
-httpServer.listen(port, () => {
-  console.log(`HTTP + WS server running on port ${port}`);
 });
